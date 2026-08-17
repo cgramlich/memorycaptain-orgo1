@@ -150,6 +150,34 @@
   .empty{color:var(--faint);font-size:14px;margin:0;text-align:center;padding:28px 10px}
   .foot{font-size:12px;color:var(--faint);margin:0;text-align:center}
 
+  /* ---- Page images. Organic chemistry is arrow-pushing, wedge-and-dash and
+     chair flips; a text-only deck has a ceiling in this subject. The whole
+     cited PAGE is shown rather than a cropped figure - the mechanism schemes
+     are vector paths, not extractable image objects, so cropping would miss
+     exactly the diagrams that matter and could mispair a caption. ---- */
+  .pagebtn{
+    all:unset;cursor:pointer;font-size:12px;font-weight:600;color:var(--accent);
+    padding:3px 8px;border:1px solid var(--rule);border-radius:999px;
+  }
+  .pagebtn:hover{border-color:var(--accent)}
+  .sheet{
+    position:fixed;inset:0;background:rgba(20,25,23,.72);z-index:50;
+    display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;
+    overflow:auto;-webkit-overflow-scrolling:touch;
+  }
+  .sheet img{
+    max-width:min(100%,860px);width:100%;height:auto;border-radius:10px;
+    background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.35);
+  }
+  .sheet-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    width:min(100%,860px);color:#F4F6F1;font-size:13px;
+  }
+  .sheet-bar button{
+    all:unset;cursor:pointer;font-weight:700;padding:6px 12px;
+    border:1px solid rgba(244,246,241,.4);border-radius:999px;
+  }
+
   /* ---- Learn mode. Same room, different furniture: rung screens reuse .card,
      .primary and .verdict wholesale, so Learn cannot drift into a second visual
      language living in the same app. ---- */
@@ -31177,6 +31205,64 @@ function previewIntervals(cardState, now) {
   return out;
 }
 
+// Where rendered page images live, or null when this build ships without them.
+// The single-file Artifact build cannot carry ~50 MB of page scans, so it sets
+// MC_PAGES to null and the control simply never appears. Defaulting to 'pages/'
+// keeps local development and the GitHub Pages build working untouched.
+const PAGE_BASE = globalThis.MC_PAGES !== undefined ? globalThis.MC_PAGES : 'pages/';
+
+// Which page the viewer is showing, or null. Deliberately transient: reopening
+// the book is cheap and persisting it would restore a modal over a fresh card.
+let sheetPage = null;
+
+/**
+ * The citation line under every card and Learn item.
+ *
+ * One helper rather than five copies: the citation is the app's core promise
+ * ("check it in one tap"), and five hand-written versions is five chances for
+ * one of them to drift out of step with the others.
+ */
+function srcLine(section, page) {
+  return el('div', { class: 'src' },
+    el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
+    el('span', { html: section }), document.createTextNode('·'),
+    PAGE_BASE
+      ? el('button', {
+          class: 'pagebtn',
+          title: `Open page ${page} of the textbook`,
+          onclick: () => { sheetPage = page; render(); },
+        }, `p. ${page}`)
+      : el('span', {}, `p. ${page}`),
+  );
+}
+
+/** The full cited page, over the app. Escape and backdrop both close it. */
+function pageSheet(page) {
+  const img = el('img', {
+    src: `${PAGE_BASE}${page}.jpg`,
+    alt: `Page ${page} of McMurry, Organic Chemistry, 10th edition`,
+    // Eager, not lazy: this image IS the interaction the user just asked for.
+    // Lazy is for content below the fold, and here it only delays the payoff.
+    fetchpriority: 'high',
+  });
+  // If the build shipped without this page, say so rather than showing a broken
+  // image frame - a silent gap reads as the app being wrong about its own source.
+  img.addEventListener('error', () => {
+    img.replaceWith(el('p', { class: 'empty', style: 'color:#F4F6F1' },
+      `Page ${page} is not bundled in this version. The citation is still exact.`));
+  });
+  return el('div', {
+    class: 'sheet',
+    onclick: (e) => { if (e.target.classList.contains('sheet')) { sheetPage = null; render(); } },
+  },
+    el('div', { class: 'sheet-bar' },
+      el('span', {}, `McMurry 10e · p. ${page}`),
+      el('button', { onclick: () => { sheetPage = null; render(); } }, 'Close'),
+    ),
+    img,
+  );
+}
+
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -31234,11 +31320,7 @@ function askView(card, total) {
     el('div', { class: 'card' },
       el('p', { class: 'q', html: card.front }),
       ta,
-      el('div', { class: 'src' },
-        el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
-        el('span', { html: card.cite.section }), document.createTextNode('·'),
-        el('span', {}, `p. ${card.cite.page}`),
-      ),
+      srcLine(card.cite.section, card.cite.page),
     ),
     el('button', { class: 'primary', onclick: check }, 'Check my answer'),
   ];
@@ -31283,11 +31365,7 @@ function gradedView(card, answer, grade, total) {
       ),
       el('hr', { class: 'hair' }),
       el('p', { class: 'a', html: card.back }),
-      el('div', { class: 'src' },
-        el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
-        el('span', { html: card.cite.section }), document.createTextNode('·'),
-        el('span', {}, `p. ${card.cite.page}`),
-      ),
+      srcLine(card.cite.section, card.cite.page),
     ),
     el('div', { class: 'grade' },
       btn(Rating.Again, 'again', 'Again'),
@@ -31382,11 +31460,7 @@ function freeTask(head, prompt, answerHtml, accept, page, note, sec) {
         ),
         el('hr', { class: 'hair' }),
         el('p', { class: 'a', html: answerHtml }),
-        el('div', { class: 'src' },
-          el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
-          el('span', {}, `§${sec}`), document.createTextNode('·'),
-          el('span', {}, `p. ${page}`),
-        ),
+        srcLine(`§${sec}`, page),
         note ? el('p', { class: 'lwhy', style: 'margin:10px 0 0' }, note) : null,
       ),
       el('button', { class: 'primary', onclick: () => advanceTask() }, 'Continue'),
@@ -31432,11 +31506,7 @@ function learnRunView() {
         el('p', { class: 'q', html: w.problem }),
         el('ol', { class: 'steps' },
           ...w.steps.slice(0, shown).map((s) => el('li', { html: s.text }))),
-        el('div', { class: 'src' },
-          el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
-          el('span', {}, `§${lrun.sec}`), document.createTextNode('·'),
-          el('span', {}, `p. ${w.page}`),
-        ),
+        srcLine(`§${lrun.sec}`, w.page),
       ),
       el('button', {
         class: 'primary',
@@ -31503,11 +31573,7 @@ function learnRunView() {
         el('span', { class: 'mark' }, lrun.picked === d.answer ? '✓' : '✗'),
         el('p', { html: d.why }),
       ) : null,
-      answered ? el('div', { class: 'src' },
-        el('b', {}, 'McMurry 10e'), document.createTextNode('·'),
-        el('span', {}, `§${d.from}`), document.createTextNode('·'),
-        el('span', {}, `p. ${d.page}`),
-      ) : null,
+      answered ? srcLine(`§${d.from}`, d.page) : null,
     ),
     answered ? el('button', { class: 'primary', onclick: () => advanceTask() }, 'Continue') : null,
   ];
@@ -31564,7 +31630,7 @@ function doneView() {
   ];
 }
 
-function render() {
+function renderBody() {
   const app = document.getElementById('app');
   app.replaceChildren();
 
@@ -31601,6 +31667,29 @@ function render() {
   const ta = app.querySelector('textarea');
   if (ta) ta.focus();
 }
+
+/**
+ * Draw the screen, then the page viewer over it if one is open.
+ *
+ * The viewer is appended here rather than inside each view because renderBody
+ * returns early for the retained and learn screens - putting it in one of them
+ * would silently give the others no way to open the book.
+ */
+function render() {
+  renderBody();
+  if (sheetPage == null) return;
+  const app = document.getElementById('app');
+  app.append(pageSheet(sheetPage));
+  // Focus the close control so Escape and the keyboard both work from the sheet.
+  const close = app.querySelector('.sheet-bar button');
+  if (close) close.focus();
+}
+
+// Escape closes the viewer. Bound once, at the document, because the sheet is
+// rebuilt on every render and a per-element listener would leak one per open.
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && sheetPage != null) { sheetPage = null; render(); }
+});
 
 if (demo === 'graded') {
   const card = CARDS[0];
